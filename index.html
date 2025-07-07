@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Digital Slam Book</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .bg-gradient {
+            background-image: linear-gradient(to top right, #6d28d9, #4f46e5, #1d4ed8);
+        }
+        .card {
+            background-color: white;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            cursor: pointer;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .form-card {
+            background-color: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        .modal { z-index: 50; }
+        .error-message { color: #ef4444; font-weight: 600; font-size: 0.875rem; margin-top: 0.5rem; text-align: center; }
+        .delete-btn { background-color: #ef4444; color: white; transition: background-color 0.2s ease; }
+        .delete-btn:hover { background-color: #dc2626; }
+        .confirm-delete-btn { background-color: #f97316; }
+        .confirm-delete-btn:hover { background-color: #ea580c; }
+    </style>
+</head>
+<body class="antialiased text-gray-800">
+
+    <!-- Main App Container -->
+    <div id="app">
+        <!-- All dynamic content is injected here by JavaScript -->
+        <div id="loading-view" class="min-h-screen flex items-center justify-center bg-gradient">
+            <p class="text-white text-2xl animate-pulse">Loading Your Slam Book Experience...</p>
+        </div>
+        <div id="auth-view" class="hidden min-h-screen flex items-center justify-center bg-gradient p-4"></div>
+        <div id="admin-panel-view" class="hidden min-h-screen bg-gradient p-4 sm:p-8"></div>
+        <div id="public-form-view" class="hidden min-h-screen flex items-center justify-center bg-gradient p-4"></div>
+        <div id="thank-you-view" class="hidden min-h-screen flex items-center justify-center bg-gradient p-4"></div>
+        <div id="entry-modal" class="modal fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center p-4"></div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, serverTimestamp, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyA1nu2rG6KrImEIpVlNJjbnTf8drv5wwqk",
+  authDomain: "my-digital-slam-book.firebaseapp.com",
+  projectId: "my-digital-slam-book",
+  storageBucket: "my-digital-slam-book.firebasestorage.app",
+  messagingSenderId: "817618412617",
+  appId: "1:817618412617:web:0d4aff9ea0cb5fab610b98",
+  measurementId: "G-H7EBDPNETL"
+};
+        let app, db, auth;
+        let unsubscribeFromEntries = null; 
+
+        // --- TEMPLATES ---
+        const authHTML = `
+            <div class="max-w-md w-full bg-white p-8 rounded-2xl shadow-lg">
+                <div id="login-container">
+                    <h1 class="text-3xl font-bold text-center mb-2 text-gray-800">Welcome!</h1>
+                    <p class="text-center text-gray-500 mb-8">Sign in or create an account.</p>
+                    <form id="login-form">
+                        <div class="space-y-4">
+                            <input type="email" id="login-email" placeholder="Email" required class="w-full px-3 py-2 border rounded-md">
+                            <input type="password" id="login-password" placeholder="Password" required class="w-full px-3 py-2 border rounded-md">
+                        </div>
+                        <p id="login-error" class="error-message"></p>
+                        <button type="submit" class="mt-6 w-full py-3 px-4 rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Login</button>
+                    </form>
+                    <p class="text-center text-sm text-gray-500 my-4">or</p>
+                    <button id="google-signin-btn" class="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-md border bg-white hover:bg-gray-50">
+                        <svg class="w-5 h-5" viewBox="0 0 48 48"><path fill="#4285F4" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"></path><path fill="#34A853" d="M6.306 14.691L22.99 29.381l17.308-17.308l-5.657-5.657C31.053 10.309 27.66 8 24 8c-3.66 0-7.053 2.309-9.694 5.657l-7.999-7.999z"></path><path fill="#FBBC05" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"></path><path fill="#EA4335" d="M43.611 20.083L42 20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.574l.003-.002l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"></path></svg>
+                        Sign in with Google
+                    </button>
+                    <p class="text-center mt-4 text-sm">Don't have an account? <a href="#" id="show-register" class="font-medium text-indigo-600 hover:text-indigo-500">Register</a></p>
+                </div>
+                <div id="register-container" class="hidden">
+                    <h1 class="text-3xl font-bold text-center mb-8 text-gray-800">Create Account</h1>
+                    <form id="register-form">
+                        <div class="space-y-4">
+                            <input type="email" id="register-email" placeholder="Email" required class="w-full px-3 py-2 border rounded-md">
+                            <input type="password" id="register-password" placeholder="Password (min. 6 characters)" required class="w-full px-3 py-2 border rounded-md">
+                        </div>
+                        <p id="register-error" class="error-message"></p>
+                        <button type="submit" class="mt-6 w-full py-3 px-4 rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Register</button>
+                    </form>
+                    <p class="text-center mt-4 text-sm">Already have an account? <a href="#" id="show-login" class="font-medium text-indigo-600 hover:text-indigo-500">Login</a></p>
+                </div>
+            </div>`;
+        
+        const adminPanelHTML = (userId) => `
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+                 <h1 class="text-3xl sm:text-4xl font-bold text-white drop-shadow-lg">My Slam Book</h1>
+                 <button id="logout-btn-admin" class="bg-white/20 text-white px-4 py-2 rounded-md hover:bg-white/30">Logout</button>
+            </div>
+            <div class="max-w-4xl mx-auto bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-md mb-8">
+                <h2 class="text-xl font-semibold mb-3">Share Your Book</h2>
+                <p class="text-gray-600 mb-4">Share this link with your friends:</p>
+                <div class="flex gap-2">
+                    <input id="shareable-link" type="text" readonly value="${window.location.origin}${window.location.pathname}?bookOwnerId=${userId}" class="w-full bg-gray-100 border rounded-md px-3 py-2">
+                    <button id="copy-link-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">Copy</button>
+                </div>
+                <div class="mt-4 text-center"><img id="qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${window.location.origin}${window.location.pathname}?bookOwnerId=${userId}`)}" alt="QR Code" class="mx-auto rounded-lg"></div>
+            </div>
+            <div id="entries-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+            <div id="loading-state" class="text-center py-10"><p class="text-white text-lg">Loading entries...</p></div>
+        `;
+
+        const publicFormHTML = (bookOwnerId) => `
+            <div class="max-w-xl w-full mx-auto p-8 rounded-2xl shadow-lg form-card">
+                <h1 class="text-3xl font-bold text-center mb-2 text-gray-800">My Slam Book</h1>
+                <p class="text-center text-gray-500 mb-8">You're filling out a friend's book!</p>
+                <form id="public-slam-form" data-owner-id="${bookOwnerId}">
+                    <div class="space-y-6">
+                        <div><label class="block text-sm font-medium text-gray-700">Profile Picture</label><div class="mt-1 flex items-center space-x-4"><img id="image-preview" src="https://placehold.co/96x96/e0e0e0/7f7f7f?text=PIC" class="h-24 w-24 rounded-full object-cover"><label for="profile-pic" class="cursor-pointer bg-white py-2 px-3 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"><span>Upload</span><input id="profile-pic" type="file" class="sr-only" accept="image/*" required></label></div></div>
+                        <div><label for="public-name" class="block text-sm font-medium text-gray-700">Your Name</label><input type="text" id="public-name" required class="mt-1 w-full p-2 border rounded-md"></div>
+                        <div><label for="public-phone" class="block text-sm font-medium text-gray-700">Phone Number</label><input type="tel" id="public-phone" required class="mt-1 w-full p-2 border rounded-md"></div>
+                        <div><label for="q-memory" class="block text-sm font-medium text-gray-700">My favorite memory with you is...</label><textarea id="q-memory" rows="3" required class="mt-1 w-full p-2 border rounded-md"></textarea></div>
+                        <div><label for="q-oneword" class="block text-sm font-medium text-gray-700">One word to describe you is...</label><input type="text" id="q-oneword" required class="mt-1 w-full p-2 border rounded-md"></div>
+                        <div><label for="q-opinion" class="block text-sm font-medium text-gray-700">My honest opinion about you...</label><textarea id="q-opinion" rows="3" required class="mt-1 w-full p-2 border rounded-md"></textarea></div>
+                    </div>
+                    <p id="public-submit-error" class="error-message"></p>
+                    <button type="submit" class="mt-6 w-full py-3 px-4 rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">Submit My Entry</button>
+                </form>
+            </div>`;
+        
+        // --- VIEW RENDERING ---
+        function showView(viewId, content = '') {
+            const views = ['loading-view', 'auth-view', 'admin-panel-view', 'public-form-view', 'thank-you-view'];
+            views.forEach(id => document.getElementById(id)?.classList.add('hidden'));
+            
+            const view = document.getElementById(viewId);
+            if (content) view.innerHTML = content;
+            view.classList.remove('hidden');
+        }
+
+        // --- MAIN APP LOGIC ---
+        function main() {
+            if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+                document.getElementById('app').innerHTML = `<div class="p-8 text-center text-red-600 font-bold text-lg bg-white rounded-lg">Configuration Error: Please paste your Firebase config object into the script.</div>`;
+                return;
+            }
+
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+            } catch (e) {
+                console.error("Firebase initialization failed:", e);
+                document.getElementById('app').innerHTML = `<div class="p-8 text-center text-red-600 font-bold">Error: Could not initialize Firebase. Check console.</div>`;
+                return;
+            }
+
+            onAuthStateChanged(auth, (user) => {
+                if (unsubscribeFromEntries) unsubscribeFromEntries();
+                
+                const urlParams = new URLSearchParams(window.location.search);
+                const bookOwnerId = urlParams.get('bookOwnerId');
+
+                if (user) {
+                    if (bookOwnerId && bookOwnerId !== user.uid) {
+                        showPublicForm(bookOwnerId);
+                    } else {
+                        showAdminPanel(user.uid);
+                    }
+                } else {
+                    if (bookOwnerId) {
+                        showPublicForm(bookOwnerId);
+                    } else {
+                        showView('auth-view', authHTML);
+                    }
+                }
+            });
+
+            setupGlobalEventListener();
+        }
+
+        function setupGlobalEventListener() {
+            const appContainer = document.getElementById('app');
+            
+            appContainer.addEventListener('click', async (e) => {
+                const target = e.target;
+                const targetId = target.id;
+
+                if (targetId === 'show-register') {
+                    e.preventDefault();
+                    document.getElementById('login-container').classList.add('hidden');
+                    document.getElementById('register-container').classList.remove('hidden');
+                }
+                if (targetId === 'show-login') {
+                    e.preventDefault();
+                    document.getElementById('register-container').classList.add('hidden');
+                    document.getElementById('login-container').classList.remove('hidden');
+                }
+                if (targetId === 'google-signin-btn') {
+                    const provider = new GoogleAuthProvider();
+                    try { await signInWithPopup(auth, provider); } catch (error) { console.error("Google Sign-in failed:", error); }
+                }
+                if (targetId === 'logout-btn-admin') {
+                    await signOut(auth);
+                    window.history.pushState({}, '', window.location.pathname);
+                }
+                if (targetId === 'copy-link-btn') {
+                    const linkInput = document.getElementById('shareable-link');
+                    linkInput.select();
+                    document.execCommand('copy');
+                    target.textContent = 'Copied!';
+                    setTimeout(() => { target.textContent = 'Copy'; }, 2000);
+                }
+            });
+
+            appContainer.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const targetId = e.target.id;
+
+                if (targetId === 'login-form') {
+                    const email = document.getElementById('login-email').value;
+                    const pass = document.getElementById('login-password').value;
+                    const errorEl = document.getElementById('login-error');
+                    errorEl.textContent = '';
+                    try { await signInWithEmailAndPassword(auth, email, pass); } catch (error) { errorEl.textContent = 'Invalid credentials.'; }
+                }
+                if (targetId === 'register-form') {
+                    const email = document.getElementById('register-email').value;
+                    const pass = document.getElementById('register-password').value;
+                    const errorEl = document.getElementById('register-error');
+                    errorEl.textContent = '';
+                    if (pass.length < 6) {
+                        errorEl.textContent = 'Password must be at least 6 characters.';
+                        return;
+                    }
+                    try { await createUserWithEmailAndPassword(auth, email, pass); } catch (error) { errorEl.textContent = 'Registration failed. Email may be in use.'; }
+                }
+                if (targetId === 'public-slam-form') {
+                    await handlePublicSubmit(e.target);
+                }
+            });
+
+            appContainer.addEventListener('change', (e) => {
+                if (e.target.id === 'profile-pic') {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => { document.getElementById('image-preview').src = event.target.result; }
+                        reader.readAsDataURL(file);
+                    }
+                }
+            });
+        }
+
+        function showAdminPanel(userId) {
+            showView('admin-panel-view', adminPanelHTML(userId));
+            const entriesGrid = document.getElementById('entries-grid');
+            const loadingState = document.getElementById('loading-state');
+            
+            const q = query(collection(db, `users/${userId}/entries`), orderBy("createdAt", "desc"));
+            unsubscribeFromEntries = onSnapshot(q, (snapshot) => {
+                loadingState.classList.add('hidden');
+                if (snapshot.empty) {
+                    entriesGrid.innerHTML = `<p class="text-white text-center col-span-full">No entries yet. Share your link!</p>`;
+                    return;
+                }
+                entriesGrid.innerHTML = '';
+                snapshot.forEach(doc => {
+                    const entry = { id: doc.id, ...doc.data() };
+                    const card = document.createElement('div');
+                    card.className = 'card cursor-default';
+                    card.innerHTML = `<div class="p-4 flex flex-col items-center text-center">
+                        <img src="${entry.imageBase64}" alt="Profile" class="h-24 w-24 rounded-full object-cover mb-4">
+                        <h3 class="text-lg font-bold truncate">${entry.writerName}</h3>
+                        <p class="text-sm text-gray-500">${entry.phone}</p>
+                        <div class="text-left w-full mt-4 pt-4 border-t space-y-2 text-sm">
+                            <p><strong>Memory:</strong> ${entry.memory}</p>
+                            <p><strong>One Word:</strong> ${entry.oneWord}</p>
+                            <p><strong>Opinion:</strong> ${entry.opinion}</p>
+                        </div>
+                    </div>`;
+                    entriesGrid.appendChild(card);
+                });
+            }, (error) => {
+                console.error("Firestore Error:", error);
+                entriesGrid.innerHTML = `<p class="text-red-300 text-center col-span-full">Error loading entries. Check Firestore rules.</p>`;
+            });
+        }
+
+        async function showPublicForm(bookOwnerId) {
+            showView('public-form-view', publicFormHTML(bookOwnerId));
+        }
+        
+        async function handlePublicSubmit(formElement) {
+            const ownerId = formElement.dataset.ownerId;
+            const submitBtn = formElement.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+
+            try {
+                const file = document.getElementById('profile-pic').files[0];
+                if (!file) throw new Error("Please select a profile picture.");
+                
+                const imageBase64 = await resizeImage(file, 400, 400);
+                const sizeInBytes = new TextEncoder().encode(imageBase64).length;
+                if (sizeInBytes > 1048487) {
+                     throw new Error("Image is too large even after resizing.");
+                }
+
+                const entryData = {
+                    writerName: document.getElementById('public-name').value,
+                    phone: document.getElementById('public-phone').value,
+                    memory: document.getElementById('q-memory').value,
+                    oneWord: document.getElementById('q-oneword').value,
+                    opinion: document.getElementById('q-opinion').value,
+                    imageBase64: imageBase64,
+                    createdAt: serverTimestamp()
+                };
+                await addDoc(collection(db, `users/${ownerId}/entries`), entryData);
+                
+                const thankYouHTML = `<div class="bg-white p-10 rounded-2xl shadow-lg text-center">
+                    <h2 class="text-4xl font-bold text-green-500 mb-4">Thank You!</h2>
+                    <p class="text-gray-600 text-lg">Your entry has been saved.</p>
+                </div>`;
+                showView('thank-you-view', thankYouHTML);
+
+            } catch (err) {
+                console.error("Submission failed:", err);
+                document.getElementById('public-submit-error').textContent = err.message || "Failed to submit. Please try again.";
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit Entry';
+            }
+        }
+        
+        function resizeImage(file, maxWidth, maxHeight) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let { width, height } = img;
+                        if (width > height) {
+                            if (width > maxWidth) { height *= maxWidth / width; width = maxWidth; }
+                        } else {
+                            if (height > maxHeight) { width *= maxHeight / height; height = maxHeight; }
+                        }
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        resolve(canvas.toDataURL('image/jpeg', 0.7));
+                    };
+                    img.onerror = reject;
+                };
+                reader.onerror = reject;
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', main);
+    </script>
+</body>
+</html>
